@@ -48,7 +48,7 @@ base_url = "https://app.acuityscheduling.com/api/scheduling/v1/availability/time
 appointment_type_id = 13578181
 owner_id = "d0ad1034"
 timezone = "America/New_York"
-days_to_check = 14
+days_to_check = 30
 
 # === Run Button ===
 if st.button("🔍 Check Appointment Availability"):
