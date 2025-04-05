@@ -5,6 +5,10 @@ from time import sleep
 
 st.set_page_config(page_title="AAA REAL ID Checker", layout="centered")
 st.title("📅 AAA REAL ID Appointment Checker")
+st.markdown(
+    "[🔗 Book via official AAA site](https://northeast.aaa.com/automotive/registry-services/schedule-rmv.html)",
+    unsafe_allow_html=True
+)
 
 # === Location & Calendar IDs ===
 locations = {
