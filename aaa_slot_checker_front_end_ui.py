@@ -181,7 +181,7 @@ def fetch_all_slots(days_to_check):
 # === Sidebar: SEARCH controls ===
 with st.sidebar:
     st.markdown("### 🔎 Search")
-    days_to_check = st.slider("Days ahead to fetch", 1, 60, 30, 
+    days_to_check = st.slider("Days ahead to fetch", 1, 60, 30,
                                help="Larger ranges take longer. Re-run search if you change this.")
     
     search_clicked = st.button("🔄 Run Search", use_container_width=True, type="primary")
@@ -191,7 +191,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("### 🎛️ Filters")
-    st.caption("Adjust these freely — no re-search needed.")
+    st.caption("Empty = show all. Add filters to narrow down.")
     
     # Location preset
     preset = st.selectbox(
@@ -200,32 +200,34 @@ with st.sidebar:
         index=0
     )
     presets_map = {
-        "All locations": list(locations.keys()),
+        "All locations": [],  # empty = all
         "Greater Boston": ["AAA Boston", "AAA Newton", "AAA Waltham", "AAA Quincy", "AAA Westwood"],
         "North Shore": ["AAA Saugus", "AAA Peabody", "AAA Newburyport", "AAA North Andover", "AAA North Reading", "AAA Haverhill"],
         "South Shore": ["AAA Quincy", "AAA Rockland", "AAA Plymouth", "AAA Raynham", "AAA South Attleboro"],
         "Western MA": ["AAA Hadley", "AAA Springfield", "AAA West Springfield", "AAA Pittsfield"],
         "Custom": [],
     }
-    default_locs = presets_map[preset] if preset != "Custom" else []
+    default_locs = presets_map[preset]
     selected_locations = st.multiselect(
-        "Locations",
+        "Locations (leave empty for all)",
         options=list(locations.keys()),
         default=default_locs,
+        placeholder="All locations",
     )
     
     days_of_week = st.multiselect(
-        "Day of week",
+        "Day of week (leave empty for all)",
         options=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
-        default=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+        default=[],
+        placeholder="Any day",
     )
     
     col_a, col_b = st.columns(2)
     with col_a:
-        start_hour = st.selectbox("From", list(range(7, 20)), index=1, 
+        start_hour = st.selectbox("From", list(range(7, 20)), index=1,
                                    format_func=lambda h: f"{h%12 or 12} {'AM' if h<12 else 'PM'}")
     with col_b:
-        end_hour = st.selectbox("To", list(range(8, 21)), index=10, 
+        end_hour = st.selectbox("To", list(range(8, 21)), index=10,
                                  format_func=lambda h: f"{h%12 or 12} {'AM' if h<12 else 'PM'}")
     
     hide_empty = st.checkbox("Hide locations with no slots", value=True)
@@ -241,7 +243,8 @@ if search_clicked:
 
 # === Filter function (applied to cached data) ===
 def slot_matches_filters(dt):
-    if dt.strftime("%A") not in days_of_week:
+    # Empty days_of_week = match any day
+    if days_of_week and dt.strftime("%A") not in days_of_week:
         return False
     if dt.hour < start_hour or dt.hour >= end_hour:
         return False
@@ -251,9 +254,12 @@ def slot_matches_filters(dt):
 if st.session_state.raw_results is None:
     st.info("👈 Click **Run Search** in the sidebar to fetch appointment data. Once fetched, you can adjust filters instantly without re-searching.")
 else:
+    # Empty selected_locations = show all
+    locations_to_show = selected_locations if selected_locations else list(locations.keys())
+    
     # Apply filters to cached raw data
     filtered = []
-    for location in selected_locations:
+    for location in locations_to_show:
         raw_slots = st.session_state.raw_results.get(location, [])
         filtered_slots = [dt for dt in raw_slots if slot_matches_filters(dt)]
         filtered.append({"location": location, "slots": filtered_slots})
@@ -271,50 +277,47 @@ else:
         unsafe_allow_html=True
     )
     
-    if not selected_locations:
-        st.warning("Select at least one location in the sidebar.")
-    else:
-        # Summary
-        total_slots = sum(len(r["slots"]) for r in filtered)
-        locations_with_slots = sum(1 for r in filtered if r["slots"])
+    # Summary
+    total_slots = sum(len(r["slots"]) for r in filtered)
+    locations_with_slots = sum(1 for r in filtered if r["slots"])
+    
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Matching slots", total_slots)
+    m2.metric("Locations available", f"{locations_with_slots}/{len(filtered)}")
+    m3.metric("Days fetched", st.session_state.searched_days)
+    
+    st.markdown("")
+    
+    # Results
+    for r in filtered:
+        location = r["location"]
+        slots = r["slots"]
         
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Matching slots", total_slots)
-        m2.metric("Locations available", f"{locations_with_slots}/{len(filtered)}")
-        m3.metric("Days fetched", st.session_state.searched_days)
-        
-        st.markdown("")
-        
-        # Results
-        for r in filtered:
-            location = r["location"]
-            slots = r["slots"]
+        if slots:
+            slots_by_date = {}
+            for dt in slots:
+                date_key = dt.strftime("%a, %b %d")
+                slots_by_date.setdefault(date_key, []).append(dt.strftime("%-I:%M %p"))
             
-            if slots:
-                slots_by_date = {}
-                for dt in slots:
-                    date_key = dt.strftime("%a, %b %d")
-                    slots_by_date.setdefault(date_key, []).append(dt.strftime("%-I:%M %p"))
-                
-                slots_html = ""
-                for date_key, times in slots_by_date.items():
-                    chips = "".join(f'<span class="slot-chip">{t}</span>' for t in times)
-                    slots_html += f'<div class="date-group"><div class="date-label">{date_key}</div>{chips}</div>'
-                
-                st.markdown(f"""
-                    <div class="location-card">
-                        <div class="location-name">
-                            <span>{location}</span>
-                            <span class="slot-count">{len(slots)} slots</span>
-                        </div>
-                        {slots_html}
+            slots_html = ""
+            for date_key, times in slots_by_date.items():
+                chips = "".join(f'<span class="slot-chip">{t}</span>' for t in times)
+                slots_html += f'<div class="date-group"><div class="date-label">{date_key}</div>{chips}</div>'
+            
+            st.markdown(f"""
+                <div class="location-card">
+                    <div class="location-name">
+                        <span>{location}</span>
+                        <span class="slot-count">{len(slots)} slots</span>
                     </div>
-                """, unsafe_allow_html=True)
-            elif not hide_empty:
-                st.markdown(
-                    f'<div class="location-card-empty">— {location}</div>',
-                    unsafe_allow_html=True
-                )
-        
-        if total_slots == 0:
-            st.info("No slots match your current filters. Try widening the time window, adding more days of the week, or selecting more locations.")
+                    {slots_html}
+                </div>
+            """, unsafe_allow_html=True)
+        elif not hide_empty:
+            st.markdown(
+                f'<div class="location-card-empty">— {location}</div>',
+                unsafe_allow_html=True
+            )
+    
+    if total_slots == 0:
+        st.info("No slots match your current filters. Try widening the time window, adding more days, or clearing the location filter.")
