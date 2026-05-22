@@ -1,17 +1,15 @@
 import streamlit as st
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from time import sleep
 import math
 
 st.set_page_config(page_title="AAA REAL ID Checker", layout="centered", page_icon="📅")
 
-# === Custom CSS ===
 st.markdown("""
 <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    
     .main-header {
         font-size: 2.2rem;
         font-weight: 700;
@@ -24,13 +22,8 @@ st.markdown("""
         font-size: 0.95rem;
         margin-bottom: 1.5rem;
     }
-    .subheader a {
-        color: #667eea;
-        text-decoration: none;
-        font-weight: 500;
-    }
+    .subheader a { color: #667eea; text-decoration: none; font-weight: 500; }
     .subheader a:hover { text-decoration: underline; }
-    
     .location-card {
         padding: 18px 20px;
         margin-bottom: 14px;
@@ -58,12 +51,7 @@ st.markdown("""
         justify-content: space-between;
         margin-bottom: 10px;
     }
-    .location-meta {
-        font-size: 12px;
-        color: #a0aec0;
-        font-weight: 400;
-        margin-left: 8px;
-    }
+    .location-meta { font-size: 12px; color: #a0aec0; font-weight: 400; margin-left: 8px; }
     .slot-count {
         background: #ebf4ff;
         color: #4c51bf;
@@ -149,34 +137,29 @@ locations = {
     "AAA West Springfield": (5365483, 42.1037, -72.6398),
     "AAA Worcester":        (3720298, 42.2626, -71.8023),
 }
-
-location_ids   = {k: v[0] for k, v in locations.items()}
+location_ids    = {k: v[0] for k, v in locations.items()}
 location_coords = {k: (v[1], v[2]) for k, v in locations.items()}
 
 base_url = "https://app.acuityscheduling.com/api/scheduling/v1/availability/times"
 appointment_type_id = 13578181
 owner_id = "d0ad1034"
 timezone = "America/New_York"
+FETCH_DAYS = 90  # always fetch 90 days — date range is a filter
 
-# === Haversine distance ===
 def haversine(lat1, lon1, lat2, lon2):
-    R = 3958.8  # miles
+    R = 3958.8
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
     dlambda = math.radians(lon2 - lon1)
     a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-# === Initialize session state ===
-if "raw_results" not in st.session_state:
-    st.session_state.raw_results = None
-if "search_timestamp" not in st.session_state:
-    st.session_state.search_timestamp = None
-if "searched_days" not in st.session_state:
-    st.session_state.searched_days = None
+# === Session state ===
+for key in ["raw_results", "search_timestamp"]:
+    if key not in st.session_state:
+        st.session_state[key] = None
 
-# === Search function ===
-def fetch_all_slots(days_to_check):
+def fetch_all_slots():
     start_date = datetime.now().strftime("%Y-%m-%d")
     results = {}
     progress_bar = st.progress(0)
@@ -190,7 +173,7 @@ def fetch_all_slots(days_to_check):
             "appointmentTypeId": appointment_type_id,
             "calendarId": calendar_id,
             "startDate": start_date,
-            "maxDays": days_to_check,
+            "maxDays": FETCH_DAYS,
             "timezone": timezone,
         }
         try:
@@ -201,8 +184,7 @@ def fetch_all_slots(days_to_check):
                 for date, slots in data.items():
                     for slot in slots:
                         try:
-                            dt = datetime.fromisoformat(slot["time"])
-                            slot_datetimes.append(dt)
+                            slot_datetimes.append(datetime.fromisoformat(slot["time"]))
                         except:
                             continue
             results[location] = sorted(slot_datetimes)
@@ -216,20 +198,19 @@ def fetch_all_slots(days_to_check):
 # === Sidebar ===
 with st.sidebar:
     st.markdown("### 🔎 Search")
-    days_to_check = st.slider("Days ahead to fetch", 1, 60, 30,
-                               help="Larger ranges take longer. Re-run search if you change this.")
+    st.caption(f"Always fetches {FETCH_DAYS} days of data. Use filters to narrow the date range.")
     search_clicked = st.button("🔄 Run Search", use_container_width=True, type="primary")
-    if st.session_state.raw_results is not None:
-        st.caption(f"✓ Cached at {st.session_state.search_timestamp.strftime('%I:%M %p')} • {st.session_state.searched_days}d window")
+    if st.session_state.search_timestamp:
+        st.caption(f"✓ Cached at {st.session_state.search_timestamp.strftime('%I:%M %p')}")
 
     st.markdown("---")
     st.markdown("### 🎛️ Filters")
-    st.caption("Empty = show all. Add filters to narrow down.")
+    st.caption("All filters are instant — no re-search needed.")
 
+    # --- Location ---
     preset = st.selectbox(
         "Quick select",
         ["All locations", "Greater Boston", "North Shore", "South Shore", "Western MA", "Custom"],
-        index=0
     )
     presets_map = {
         "All locations": [],
@@ -246,6 +227,16 @@ with st.sidebar:
         placeholder="All locations",
     )
 
+    # --- Date range ---
+    today = datetime.now().date()
+    max_date = today + timedelta(days=FETCH_DAYS)
+    date_col1, date_col2 = st.columns(2)
+    with date_col1:
+        date_from = st.date_input("From date", value=today, min_value=today, max_value=max_date)
+    with date_col2:
+        date_to = st.date_input("To date", value=max_date, min_value=today, max_value=max_date)
+
+    # --- Day of week ---
     days_of_week = st.multiselect(
         "Day of week (leave empty for all)",
         options=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
@@ -253,16 +244,18 @@ with st.sidebar:
         placeholder="Any day",
     )
 
+    # --- Time window ---
     col_a, col_b = st.columns(2)
     with col_a:
-        start_hour = st.selectbox("From", list(range(7, 20)), index=1,
+        start_hour = st.selectbox("From time", list(range(7, 20)), index=1,
                                    format_func=lambda h: f"{h%12 or 12} {'AM' if h<12 else 'PM'}")
     with col_b:
-        end_hour = st.selectbox("To", list(range(8, 21)), index=10,
+        end_hour = st.selectbox("To time", list(range(8, 21)), index=10,
                                  format_func=lambda h: f"{h%12 or 12} {'AM' if h<12 else 'PM'}")
 
     hide_empty = st.checkbox("Hide locations with no slots", value=True)
 
+    # --- Sort ---
     st.markdown("---")
     st.markdown("### 📊 Sort")
     sort_by = st.radio(
@@ -270,13 +263,10 @@ with st.sidebar:
         ["Soonest appointment", "Most slots", "Closest to me", "Alphabetical"],
         index=0
     )
-
-    user_zip = None
     user_lat, user_lon = None, None
     if sort_by == "Closest to me":
         user_zip = st.text_input("Your ZIP code", placeholder="e.g. 02101")
         if user_zip and len(user_zip) == 5 and user_zip.isdigit():
-            # Rough ZIP → lat/lon using a free API
             try:
                 r = requests.get(f"https://api.zippopotam.us/us/{user_zip}", timeout=3)
                 if r.status_code == 200:
@@ -291,14 +281,15 @@ with st.sidebar:
 
 # === Handle search ===
 if search_clicked:
-    with st.spinner("Fetching all locations..."):
-        st.session_state.raw_results = fetch_all_slots(days_to_check)
+    with st.spinner("Fetching all locations (90 days)..."):
+        st.session_state.raw_results = fetch_all_slots()
         st.session_state.search_timestamp = datetime.now()
-        st.session_state.searched_days = days_to_check
     st.rerun()
 
 # === Filter function ===
 def slot_matches_filters(dt):
+    if dt.date() < date_from or dt.date() > date_to:
+        return False
     if days_of_week and dt.strftime("%A") not in days_of_week:
         return False
     if dt.hour < start_hour or dt.hour >= end_hour:
@@ -307,7 +298,7 @@ def slot_matches_filters(dt):
 
 # === Display ===
 if st.session_state.raw_results is None:
-    st.info("👈 Click **Run Search** in the sidebar to fetch appointment data. Once fetched, you can adjust filters instantly without re-searching.")
+    st.info("👈 Click **Run Search** once to fetch all data. After that, every filter updates instantly — including the date range.")
 else:
     locations_to_show = selected_locations if selected_locations else list(location_ids.keys())
 
@@ -324,7 +315,6 @@ else:
             "distance": dist,
         })
 
-    # === Sort ===
     if sort_by == "Soonest appointment":
         filtered.sort(key=lambda x: (x["soonest"] is None, x["soonest"] or datetime.max))
     elif sort_by == "Most slots":
@@ -337,29 +327,25 @@ else:
     else:
         filtered.sort(key=lambda x: x["location"])
 
-    # Cache notice
     st.markdown(
-        f'<div class="cache-info">⚡ Showing cached results from {st.session_state.search_timestamp.strftime("%I:%M %p")}. '
-        f'Filters apply instantly. Run a new search to refresh data.</div>',
+        f'<div class="cache-info">⚡ Cached at {st.session_state.search_timestamp.strftime("%I:%M %p")} · '
+        f'{FETCH_DAYS}-day window fetched · filters apply instantly.</div>',
         unsafe_allow_html=True
     )
 
-    # Summary metrics
     total_slots = sum(len(r["slots"]) for r in filtered)
     locations_with_slots = sum(1 for r in filtered if r["slots"])
     m1, m2, m3 = st.columns(3)
     m1.metric("Matching slots", total_slots)
     m2.metric("Locations available", f"{locations_with_slots}/{len(filtered)}")
-    m3.metric("Days fetched", st.session_state.searched_days)
+    m3.metric("Date window", f"{(date_to - date_from).days + 1}d")
     st.markdown("")
 
-    # Results
     for r in filtered:
         location = r["location"]
         slots = r["slots"]
         dist = r["distance"]
-
-        dist_str = f" · {dist:.1f} mi away" if dist is not None else ""
+        dist_str = f" · {dist:.1f} mi" if dist is not None else ""
 
         if slots:
             slots_by_date = {}
@@ -388,4 +374,4 @@ else:
             )
 
     if total_slots == 0:
-        st.info("No slots match your current filters. Try widening the time window, adding more days, or clearing the location filter.")
+        st.info("No slots match your filters. Try widening the date range, time window, or day of week.")
