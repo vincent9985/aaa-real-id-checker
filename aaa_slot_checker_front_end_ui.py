@@ -1,6 +1,6 @@
 import streamlit as st
 import requests
-from datetime import datetime, time
+from datetime import datetime
 from time import sleep
 
 st.set_page_config(page_title="AAA REAL ID Checker", layout="centered", page_icon="📅")
@@ -8,11 +8,9 @@ st.set_page_config(page_title="AAA REAL ID Checker", layout="centered", page_ico
 # === Custom CSS ===
 st.markdown("""
 <style>
-    /* Hide Streamlit chrome */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Header */
     .main-header {
         font-size: 2.2rem;
         font-weight: 700;
@@ -23,18 +21,15 @@ st.markdown("""
     .subheader {
         color: #718096;
         font-size: 0.95rem;
-        margin-bottom: 2rem;
+        margin-bottom: 1.5rem;
     }
     .subheader a {
         color: #667eea;
         text-decoration: none;
         font-weight: 500;
     }
-    .subheader a:hover {
-        text-decoration: underline;
-    }
+    .subheader a:hover { text-decoration: underline; }
     
-    /* Location cards */
     .location-card {
         padding: 18px 20px;
         margin-bottom: 14px;
@@ -70,9 +65,7 @@ st.markdown("""
         font-size: 12px;
         font-weight: 600;
     }
-    .date-group {
-        margin-top: 10px;
-    }
+    .date-group { margin-top: 10px; }
     .date-label {
         color: #4a5568;
         font-size: 12px;
@@ -92,11 +85,16 @@ st.markdown("""
         color: #2d3748;
         font-variant-numeric: tabular-nums;
     }
-    
-    /* Sidebar tweaks */
-    section[data-testid="stSidebar"] {
-        background: #fafbfc;
+    .cache-info {
+        background: #f0fff4;
+        border: 1px solid #c6f6d5;
+        color: #22543d;
+        padding: 8px 14px;
+        border-radius: 6px;
+        font-size: 13px;
+        margin-bottom: 12px;
     }
+    section[data-testid="stSidebar"] { background: #fafbfc; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -127,22 +125,80 @@ appointment_type_id = 13578181
 owner_id = "d0ad1034"
 timezone = "America/New_York"
 
-# === Sidebar ===
-with st.sidebar:
-    st.markdown("### ⚙️ Filters")
+# === Initialize session state ===
+if "raw_results" not in st.session_state:
+    st.session_state.raw_results = None
+if "search_timestamp" not in st.session_state:
+    st.session_state.search_timestamp = None
+if "searched_days" not in st.session_state:
+    st.session_state.searched_days = None
+
+# === Search function ===
+def fetch_all_slots(days_to_check):
+    """Fetch ALL slots for ALL locations — no filtering, just raw data."""
+    start_date = datetime.now().strftime("%Y-%m-%d")
+    results = {}
     
-    days_to_check = st.slider("Days ahead", 1, 60, 30)
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    location_items = list(locations.items())
+    for i, (location, calendar_id) in enumerate(location_items):
+        status_text.caption(f"Fetching {location}... ({i+1}/{len(location_items)})")
+        progress_bar.progress((i + 1) / len(location_items))
+        
+        params = {
+            "owner": owner_id,
+            "appointmentTypeId": appointment_type_id,
+            "calendarId": calendar_id,
+            "startDate": start_date,
+            "maxDays": days_to_check,
+            "timezone": timezone,
+        }
+        try:
+            response = requests.get(base_url, params=params)
+            data = response.json()
+            slot_datetimes = []
+            
+            if isinstance(data, dict):
+                for date, slots in data.items():
+                    for slot in slots:
+                        try:
+                            dt = datetime.fromisoformat(slot["time"])
+                            slot_datetimes.append(dt)
+                        except:
+                            continue
+            
+            results[location] = sorted(slot_datetimes)
+        except Exception as e:
+            results[location] = []
+        sleep(0.5)
+    
+    progress_bar.empty()
+    status_text.empty()
+    return results
+
+# === Sidebar: SEARCH controls ===
+with st.sidebar:
+    st.markdown("### 🔎 Search")
+    days_to_check = st.slider("Days ahead to fetch", 1, 60, 30, 
+                               help="Larger ranges take longer. Re-run search if you change this.")
+    
+    search_clicked = st.button("🔄 Run Search", use_container_width=True, type="primary")
+    
+    if st.session_state.raw_results is not None:
+        st.caption(f"✓ Cached at {st.session_state.search_timestamp.strftime('%I:%M %p')} • {st.session_state.searched_days}d window")
     
     st.markdown("---")
-    st.markdown("**📍 Locations**")
+    st.markdown("### 🎛️ Filters")
+    st.caption("Adjust these freely — no re-search needed.")
     
-    # Preset location groups
+    # Location preset
     preset = st.selectbox(
         "Quick select",
         ["All locations", "Greater Boston", "North Shore", "South Shore", "Western MA", "Custom"],
         index=0
     )
-    
     presets_map = {
         "All locations": list(locations.keys()),
         "Greater Boston": ["AAA Boston", "AAA Newton", "AAA Waltham", "AAA Quincy", "AAA Westwood"],
@@ -151,37 +207,39 @@ with st.sidebar:
         "Western MA": ["AAA Hadley", "AAA Springfield", "AAA West Springfield", "AAA Pittsfield"],
         "Custom": [],
     }
-    
     default_locs = presets_map[preset] if preset != "Custom" else []
     selected_locations = st.multiselect(
         "Locations",
         options=list(locations.keys()),
         default=default_locs,
-        label_visibility="collapsed"
     )
     
-    st.markdown("---")
-    st.markdown("**📆 Day of week**")
     days_of_week = st.multiselect(
-        "Days",
+        "Day of week",
         options=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
         default=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
-        label_visibility="collapsed"
     )
     
-    st.markdown("---")
-    st.markdown("**🕒 Time window**")
     col_a, col_b = st.columns(2)
     with col_a:
-        start_hour = st.selectbox("From", list(range(7, 20)), index=1, format_func=lambda h: f"{h%12 or 12} {'AM' if h<12 else 'PM'}")
+        start_hour = st.selectbox("From", list(range(7, 20)), index=1, 
+                                   format_func=lambda h: f"{h%12 or 12} {'AM' if h<12 else 'PM'}")
     with col_b:
-        end_hour = st.selectbox("To", list(range(8, 21)), index=10, format_func=lambda h: f"{h%12 or 12} {'AM' if h<12 else 'PM'}")
+        end_hour = st.selectbox("To", list(range(8, 21)), index=10, 
+                                 format_func=lambda h: f"{h%12 or 12} {'AM' if h<12 else 'PM'}")
     
-    st.markdown("---")
     hide_empty = st.checkbox("Hide locations with no slots", value=True)
-    sort_by = st.radio("Sort by", ["Most slots first", "Alphabetical"], horizontal=False)
+    sort_by = st.radio("Sort by", ["Most slots first", "Alphabetical"])
 
-# === Filter ===
+# === Handle search ===
+if search_clicked:
+    with st.spinner("Fetching all locations..."):
+        st.session_state.raw_results = fetch_all_slots(days_to_check)
+        st.session_state.search_timestamp = datetime.now()
+        st.session_state.searched_days = days_to_check
+    st.rerun()
+
+# === Filter function (applied to cached data) ===
 def slot_matches_filters(dt):
     if dt.strftime("%A") not in days_of_week:
         return False
@@ -189,73 +247,46 @@ def slot_matches_filters(dt):
         return False
     return True
 
-# === Run ===
-run = st.button("🔍 Check Availability", use_container_width=True, type="primary")
-
-if run:
-    if not selected_locations:
-        st.warning("Please select at least one location in the sidebar.")
+# === Display ===
+if st.session_state.raw_results is None:
+    st.info("👈 Click **Run Search** in the sidebar to fetch appointment data. Once fetched, you can adjust filters instantly without re-searching.")
+else:
+    # Apply filters to cached raw data
+    filtered = []
+    for location in selected_locations:
+        raw_slots = st.session_state.raw_results.get(location, [])
+        filtered_slots = [dt for dt in raw_slots if slot_matches_filters(dt)]
+        filtered.append({"location": location, "slots": filtered_slots})
+    
+    # Sort
+    if sort_by == "Most slots first":
+        filtered.sort(key=lambda x: -len(x["slots"]))
     else:
-        start_date = datetime.now().strftime("%Y-%m-%d")
-        results = []
-        
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        for i, location in enumerate(selected_locations):
-            calendar_id = locations[location]
-            status_text.caption(f"Checking {location}... ({i+1}/{len(selected_locations)})")
-            progress_bar.progress((i + 1) / len(selected_locations))
-            
-            params = {
-                "owner": owner_id,
-                "appointmentTypeId": appointment_type_id,
-                "calendarId": calendar_id,
-                "startDate": start_date,
-                "maxDays": days_to_check,
-                "timezone": timezone,
-            }
-            try:
-                response = requests.get(base_url, params=params)
-                data = response.json()
-                slot_datetimes = []
-                
-                if isinstance(data, dict):
-                    for date, slots in data.items():
-                        for slot in slots:
-                            try:
-                                dt = datetime.fromisoformat(slot["time"])
-                                if slot_matches_filters(dt):
-                                    slot_datetimes.append(dt)
-                            except:
-                                continue
-                
-                results.append({"location": location, "slots": sorted(slot_datetimes)})
-            except Exception as e:
-                results.append({"location": location, "slots": [], "error": str(e)})
-            sleep(0.5)
-        
-        progress_bar.empty()
-        status_text.empty()
-        
-        if sort_by == "Most slots first":
-            results.sort(key=lambda x: -len(x["slots"]))
-        else:
-            results.sort(key=lambda x: x["location"])
-        
-        # === Summary ===
-        total_slots = sum(len(r["slots"]) for r in results)
-        locations_with_slots = sum(1 for r in results if r["slots"])
+        filtered.sort(key=lambda x: x["location"])
+    
+    # Cache notice
+    st.markdown(
+        f'<div class="cache-info">⚡ Showing cached results from {st.session_state.search_timestamp.strftime("%I:%M %p")}. '
+        f'Filters apply instantly. Run a new search to refresh data.</div>',
+        unsafe_allow_html=True
+    )
+    
+    if not selected_locations:
+        st.warning("Select at least one location in the sidebar.")
+    else:
+        # Summary
+        total_slots = sum(len(r["slots"]) for r in filtered)
+        locations_with_slots = sum(1 for r in filtered if r["slots"])
         
         m1, m2, m3 = st.columns(3)
-        m1.metric("Total slots", total_slots)
-        m2.metric("Locations available", f"{locations_with_slots}/{len(results)}")
-        m3.metric("Days checked", days_to_check)
+        m1.metric("Matching slots", total_slots)
+        m2.metric("Locations available", f"{locations_with_slots}/{len(filtered)}")
+        m3.metric("Days fetched", st.session_state.searched_days)
         
         st.markdown("")
         
-        # === Results ===
-        for r in results:
+        # Results
+        for r in filtered:
             location = r["location"]
             slots = r["slots"]
             
@@ -286,4 +317,4 @@ if run:
                 )
         
         if total_slots == 0:
-            st.info("No slots found matching your filters. Try widening your time window or adding more days.")
+            st.info("No slots match your current filters. Try widening the time window, adding more days of the week, or selecting more locations.")
