@@ -75,7 +75,7 @@ location_coords = {k: (v[1], v[2]) for k, v in locations.items()}
 
 base_url = "https://app.acuityscheduling.com/api/scheduling/v1/availability/times"
 appointment_type_id = 13578181
-owner_id = "16564485"
+owner_id = "d0ad1034"
 timezone = "America/New_York"
 ET = ZoneInfo("America/New_York")
 
