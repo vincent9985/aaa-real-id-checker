@@ -11,86 +11,19 @@ st.markdown("""
 <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    .main-header {
-        font-size: 2.2rem;
-        font-weight: 700;
-        color: #1a202c;
-        margin-bottom: 0.25rem;
-        letter-spacing: -0.02em;
-    }
-    .subheader {
-        color: #718096;
-        font-size: 0.95rem;
-        margin-bottom: 1.5rem;
-    }
+    .main-header { font-size: 2.2rem; font-weight: 700; color: #1a202c; margin-bottom: 0.25rem; letter-spacing: -0.02em; }
+    .subheader { color: #718096; font-size: 0.95rem; margin-bottom: 1.5rem; }
     .subheader a { color: #667eea; text-decoration: none; font-weight: 500; }
     .subheader a:hover { text-decoration: underline; }
-    .location-card {
-        padding: 18px 20px;
-        margin-bottom: 14px;
-        border-radius: 10px;
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-left: 3px solid #48bb78;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-    }
-    .location-card-empty {
-        padding: 12px 20px;
-        margin-bottom: 8px;
-        border-radius: 8px;
-        background: #fafafa;
-        color: #a0aec0;
-        border: 1px solid #edf2f7;
-        font-size: 14px;
-    }
-    .location-name {
-        font-size: 1.05rem;
-        font-weight: 600;
-        color: #2d3748;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 10px;
-    }
+    .location-card { padding: 18px 20px; margin-bottom: 14px; border-radius: 10px; background: #ffffff; border: 1px solid #e2e8f0; border-left: 3px solid #48bb78; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .location-card-empty { padding: 12px 20px; margin-bottom: 8px; border-radius: 8px; background: #fafafa; color: #a0aec0; border: 1px solid #edf2f7; font-size: 14px; }
+    .location-name { font-size: 1.05rem; font-weight: 600; color: #2d3748; display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
     .location-meta { font-size: 12px; color: #a0aec0; font-weight: 400; margin-left: 8px; }
-    .slot-count {
-        background: #ebf4ff;
-        color: #4c51bf;
-        padding: 3px 10px;
-        border-radius: 12px;
-        font-size: 12px;
-        font-weight: 600;
-        white-space: nowrap;
-    }
+    .slot-count { background: #ebf4ff; color: #4c51bf; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; white-space: nowrap; }
     .date-group { margin-top: 10px; }
-    .date-label {
-        color: #4a5568;
-        font-size: 12px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-bottom: 6px;
-    }
-    .slot-chip {
-        display: inline-block;
-        padding: 5px 11px;
-        margin: 3px 4px 3px 0;
-        background: #f7fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 6px;
-        font-size: 13px;
-        color: #2d3748;
-        font-variant-numeric: tabular-nums;
-    }
-    .cache-info {
-        background: #f0fff4;
-        border: 1px solid #c6f6d5;
-        color: #22543d;
-        padding: 8px 14px;
-        border-radius: 6px;
-        font-size: 13px;
-        margin-bottom: 12px;
-    }
+    .date-label { color: #4a5568; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .slot-chip { display: inline-block; padding: 5px 11px; margin: 3px 4px 3px 0; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; color: #2d3748; font-variant-numeric: tabular-nums; }
+    .cache-info { background: #f0fff4; border: 1px solid #c6f6d5; color: #22543d; padding: 8px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
     section[data-testid="stSidebar"] { background: #fafbfc; }
 </style>
 """, unsafe_allow_html=True)
@@ -102,7 +35,6 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# === Locations with coordinates ===
 locations = {
     "AAA Quincy":           (3714482, 42.2529, -71.0023),
     "AAA Boston":           (3697037, 42.3601, -71.0589),
@@ -155,13 +87,12 @@ def haversine(lat1, lon1, lat2, lon2):
     a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-# === Session state ===
 for key in ["raw_results", "search_timestamp"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
 def fetch_all_slots():
-    start_date = datetime.now().strftime("%Y-%m-%d")
+    start_date = datetime.now(ET).strftime("%Y-%m-%d")
     results = {}
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -169,7 +100,6 @@ def fetch_all_slots():
     for i, (location, calendar_id) in enumerate(items):
         status_text.caption(f"Fetching {location}... ({i+1}/{len(items)})")
         progress_bar.progress((i + 1) / len(items))
-        # No maxDays — let the API return whatever it has
         params = {
             "owner": owner_id,
             "appointmentTypeId": appointment_type_id,
@@ -208,7 +138,6 @@ with st.sidebar:
     st.markdown("### 🎛️ Filters")
     st.caption("All filters are instant — no re-search needed.")
 
-    # --- Location ---
     preset = st.selectbox(
         "Quick select",
         ["All locations", "Greater Boston", "North Shore", "South Shore", "Western MA", "Custom"],
@@ -228,16 +157,14 @@ with st.sidebar:
         placeholder="All locations",
     )
 
-    # --- Date range ---
     today = datetime.now(ET).date()
-    max_date = today + timedelta(days=365)  # generous upper bound
+    max_date = today + timedelta(days=365)
     date_col1, date_col2 = st.columns(2)
     with date_col1:
         date_from = st.date_input("From date", value=today, min_value=today, max_value=max_date)
     with date_col2:
         date_to = st.date_input("To date", value=today + timedelta(days=60), min_value=today, max_value=max_date)
 
-    # --- Day of week ---
     days_of_week = st.multiselect(
         "Day of week (leave empty for all)",
         options=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
@@ -245,7 +172,6 @@ with st.sidebar:
         placeholder="Any day",
     )
 
-    # --- Time window ---
     col_a, col_b = st.columns(2)
     with col_a:
         start_hour = st.selectbox("From time", list(range(7, 20)), index=1,
@@ -256,7 +182,6 @@ with st.sidebar:
 
     hide_empty = st.checkbox("Hide locations with no slots", value=True)
 
-    # --- Sort ---
     st.markdown("---")
     st.markdown("### 📊 Sort")
     sort_by = st.radio(
@@ -301,6 +226,12 @@ def slot_matches_filters(dt):
 if st.session_state.raw_results is None:
     st.info("👈 Click **Run Search** once to fetch all data. After that, every filter updates instantly — including the date range.")
 else:
+    # === DEBUG — shows raw API dates for Quincy, remove once confirmed working ===
+    quincy = st.session_state.raw_results.get("AAA Quincy", [])
+    with st.expander(f"🐛 Debug: Raw Quincy data ({len(quincy)} slots)"):
+        st.write(f"**Unique dates returned by API:** {sorted(set(dt.date() for dt in quincy))}")
+    # === END DEBUG ===
+
     locations_to_show = selected_locations if selected_locations else list(location_ids.keys())
 
     filtered = []
