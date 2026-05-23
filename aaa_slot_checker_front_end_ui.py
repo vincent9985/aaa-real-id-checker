@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 from datetime import datetime, timedelta
 from time import sleep
+from zoneinfo import ZoneInfo
 import math
 
 st.set_page_config(page_title="AAA REAL ID Checker", layout="centered", page_icon="📅")
@@ -144,7 +145,7 @@ base_url = "https://app.acuityscheduling.com/api/scheduling/v1/availability/time
 appointment_type_id = 13578181
 owner_id = "d0ad1034"
 timezone = "America/New_York"
-FETCH_DAYS = 90  # always fetch 90 days — date range is a filter
+ET = ZoneInfo("America/New_York")
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 3958.8
@@ -168,12 +169,12 @@ def fetch_all_slots():
     for i, (location, calendar_id) in enumerate(items):
         status_text.caption(f"Fetching {location}... ({i+1}/{len(items)})")
         progress_bar.progress((i + 1) / len(items))
+        # No maxDays — let the API return whatever it has
         params = {
             "owner": owner_id,
             "appointmentTypeId": appointment_type_id,
             "calendarId": calendar_id,
             "startDate": start_date,
-            "maxDays": FETCH_DAYS,
             "timezone": timezone,
         }
         try:
@@ -198,10 +199,10 @@ def fetch_all_slots():
 # === Sidebar ===
 with st.sidebar:
     st.markdown("### 🔎 Search")
-    st.caption(f"Always fetches {FETCH_DAYS} days of data. Use filters to narrow the date range.")
+    st.caption("Fetches all available slots from the API. Use filters to narrow results.")
     search_clicked = st.button("🔄 Run Search", use_container_width=True, type="primary")
     if st.session_state.search_timestamp:
-        st.caption(f"✓ Cached at {st.session_state.search_timestamp.strftime('%I:%M %p')}")
+        st.caption(f"✓ Last fetched at {st.session_state.search_timestamp.strftime('%I:%M %p')} ET")
 
     st.markdown("---")
     st.markdown("### 🎛️ Filters")
@@ -228,13 +229,13 @@ with st.sidebar:
     )
 
     # --- Date range ---
-    today = datetime.now().date()
-    max_date = today + timedelta(days=FETCH_DAYS)
+    today = datetime.now(ET).date()
+    max_date = today + timedelta(days=365)  # generous upper bound
     date_col1, date_col2 = st.columns(2)
     with date_col1:
         date_from = st.date_input("From date", value=today, min_value=today, max_value=max_date)
     with date_col2:
-        date_to = st.date_input("To date", value=max_date, min_value=today, max_value=max_date)
+        date_to = st.date_input("To date", value=today + timedelta(days=60), min_value=today, max_value=max_date)
 
     # --- Day of week ---
     days_of_week = st.multiselect(
@@ -281,9 +282,9 @@ with st.sidebar:
 
 # === Handle search ===
 if search_clicked:
-    with st.spinner("Fetching all locations (90 days)..."):
+    with st.spinner("Fetching all locations..."):
         st.session_state.raw_results = fetch_all_slots()
-        st.session_state.search_timestamp = datetime.now()
+        st.session_state.search_timestamp = datetime.now(ET)
     st.rerun()
 
 # === Filter function ===
@@ -327,9 +328,9 @@ else:
     else:
         filtered.sort(key=lambda x: x["location"])
 
+    ts = st.session_state.search_timestamp.strftime("%I:%M %p").lstrip("0")
     st.markdown(
-        f'<div class="cache-info">⚡ Cached at {st.session_state.search_timestamp.strftime("%I:%M %p")} · '
-        f'{FETCH_DAYS}-day window fetched · filters apply instantly.</div>',
+        f'<div class="cache-info">⚡ Fetched at {ts} ET · filters apply instantly · re-run search to refresh.</div>',
         unsafe_allow_html=True
     )
 
